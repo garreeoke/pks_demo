@@ -1,0 +1,236 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: acme-air
+spec:
+  finalizers:
+  - kubernetes
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    category: database
+    app: mongodb
+  name: mongodb
+  namespace: acme-air
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb
+  serviceName: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      affinity: {}
+      containers:
+      - name: mongodb
+        image: mongo:3.2
+        imagePullPolicy: Always
+        args:
+          - mongod
+          - --storageEngine
+          - wiredTiger
+          - --smallfiles
+          - --noprealloc
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.podIP
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        - name: HOST_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.hostIP
+        ports:
+        - containerPort: 27017
+          name: connection-port
+          protocol: TCP
+        resources: {}
+        securityContext:
+          capabilities: {}
+          privileged: false
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /data/db
+          name: acme-air
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+  volumeClaimTemplates:
+  - metadata:
+      name: acme-air
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Gi
+      storageClassName: vsphere-default
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+  labels:
+    app: mongodb
+  name: mongodb
+  namespace: acme-air
+spec:
+  clusterIP: None
+  ports:
+  - name: connection-port
+    port: 27017
+    protocol: TCP
+    targetPort: connection-port
+  selector:
+    app: mongodb
+  sessionAffinity: None
+  type: ClusterIP
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: acme-web 
+    tier: frontend
+  name: acme-web
+  namespace: acme-air
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: acme-web
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: acme-web
+        tier: frontend
+    spec:
+      affinity: {}
+      containers:
+      - args:
+        - npm
+        - start
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.podIP
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        - name: HOST_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.hostIP
+        - name: PORT
+          value: "3000"
+        - name: MONGO_HOST
+          value: mongodb
+        - name: MONGO_PORT
+          value: "27017"
+        image: harbor.mylab.com/acme/acmenode:1
+        imagePullPolicy: Always
+        name: acme-web
+        ports:
+        - containerPort: 3000
+          name: http-port
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /
+            port: http-port
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http-port
+        resources: {}
+        securityContext:
+          capabilities: {}
+          privileged: false
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: acme-web
+    tier: frontend
+  name: acme-web
+  namespace: acme-air
+spec:
+  ports:
+  - name: http-port
+    port: 3000
+    protocol: TCP
+    targetPort: http-port
+  selector:
+    app: acme-web
+  sessionAffinity: None
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: acme-web
+  namespace: acme-air
+  annotations:
+    ncp/rewrite_target: "/"
+spec:
+  rules:
+  - host: acme-air.mylab.com
+    http:
+      paths:
+      - backend:
+          serviceName: acme-web
+          servicePort: 3000
+---

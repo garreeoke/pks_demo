@@ -1,0 +1,294 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: acme-air-tls
+spec:
+  finalizers:
+  - kubernetes
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    category: database
+    app: mongodb
+  name: mongodb
+  namespace: acme-air-tls
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb
+  serviceName: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      affinity: {}
+      containers:
+      - name: mongodb
+        image: mongo:3.2
+        imagePullPolicy: Always
+        args:
+          - mongod
+          - --storageEngine
+          - wiredTiger
+          - --smallfiles
+          - --noprealloc
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.podIP
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        - name: HOST_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.hostIP
+        ports:
+        - containerPort: 27017
+          name: connection-port
+          protocol: TCP
+        resources: {}
+        securityContext:
+          capabilities: {}
+          privileged: false
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /data/db
+          name: acme-air-tls
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+  volumeClaimTemplates:
+  - metadata:
+      name: acme-air-tls
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Gi
+      storageClassName: vsphere-default
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+  labels:
+    app: mongodb
+  name: mongodb
+  namespace: acme-air-tls
+spec:
+  clusterIP: None
+  ports:
+  - name: connection-port
+    port: 27017
+    protocol: TCP
+    targetPort: connection-port
+  selector:
+    app: mongodb
+  sessionAffinity: None
+  type: ClusterIP
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: acme-web 
+    tier: frontend
+  name: acme-web
+  namespace: acme-air-tls
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: acme-web
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: acme-web
+        tier: frontend
+    spec:
+      affinity: {}
+      containers:
+      - args:
+        - npm
+        - start
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.podIP
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        - name: HOST_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.hostIP
+        - name: PORT
+          value: "3000"
+        - name: MONGO_HOST
+          value: mongodb
+        - name: MONGO_PORT
+          value: "27017"
+        image: harbor.mylab.com/acme/acmenode:1
+        imagePullPolicy: Always
+        name: acme-web
+        ports:
+        - containerPort: 3000
+          name: http-port
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /
+            port: http-port
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http-port
+        resources: {}
+        securityContext:
+          capabilities: {}
+          privileged: false
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      #- name: telegraf
+      #  image: puckpuck/wavefront-telegraf
+      #  ports:
+      #  - name: udp-statsd
+      #    containerPort: 8125
+      #  - name: udp-8092
+      #    containerPort: 8092
+      #  - name: tcp-8094
+      #    containerPort: 8094
+      #  env:
+      #  - name: WAVEFRONT_PROXY
+      #    value: wavefront-proxy.default
+      #  - name: INTERVAL
+      #    value: 20s
+      #  - name: METRIC_SOURCE_NAME
+      #    # This can be change to use the Deployment / Statefulset name instead as a simple value
+      #    # The metric source name should not be an ephemeral value
+      #    value: planespotter-nodejs
+      #  - name: POD_NAME
+      #    valueFrom:
+      #      fieldRef:
+      #        fieldPath: metadata.name
+      #  - name: NAMESPACE
+      #    valueFrom:
+      #      fieldRef:
+      #        fieldPath: metadata.namespace
+      #  - name: NODE_HOSTNAME
+      #    valueFrom:
+      #      fieldRef:
+      #        fieldPath: spec.nodeName
+      #  resources:
+      #    requests:
+      #      memory: 30Mi
+      #      cpu: 100m
+      #    limits:
+      #      memory: 50Mi
+      #      cpu: 200m
+      #  volumeMounts:
+      #  - name: telegraf-d
+      #    mountPath: /etc/telegraf/telegraf.d
+      #volumes:
+      #- name: telegraf-d
+      #  projected:
+      #    sources:
+      #    - configMap:
+      #        name: telegraf-nginx-config
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: acme-web
+    tier: frontend
+  name: acme-web
+  namespace: acme-air-tls
+spec:
+  ports:
+  - name: http-port
+    port: 3000
+    protocol: TCP
+    targetPort: http-port
+  selector:
+    app: acme-web
+  sessionAffinity: None
+ # type: LoadBalancer
+---
+apiVersion: v1
+data:
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURGVENDQWYyZ0F3SUJBZ0lKQVBKTzV3RzlVOXBvTUEwR0NTcUdTSWIzRFFFQkN3VUFNQ0V4SHpBZEJnTlYKQkFNTUZtRmpiV1V0WVdseUxYUnNjeTV0ZVd4aFlpNWpiMjB3SGhjTk1UZ3hNakEzTWpFd01UVXlXaGNOTVRreApNakEzTWpFd01UVXlXakFoTVI4d0hRWURWUVFEREJaaFkyMWxMV0ZwY2kxMGJITXViWGxzWVdJdVkyOXRNSUlCCklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUFzRkJCZU1iQWh1NGY3UHZyTytqK2lPcjgKYks3b0pteWwrcno5MTVzUWpOekZwQTVEVEJzb2x4YkRVQkl3eHBidmtBSU5UUjNwbUhNSVoxOGRiOVhiOEM3dwp0NHViVU5LQWMyRjh0U1ZXc3lvcFJNRWhYUnZHVEtzbURqNGs1bGVaRzNZMS9JYy9QNU9hWko5ZzJMRkIxRDdTCkhUMVRNbStPWEJYd1NBQVkrckJDZzgzNnpRQTYvU0l4Y1l4QVBKN3lpUGVKd0VBMkU3Z3NsTzZiaTVYVEdIT0UKNzBGYUdKMXg0aGFkUTIvY1QyS0pBSm02NHJqMS9HNHQ4UFNVaCtxazZrNDdaaFZRTE92b1ZUT2FkalZua2tmeApMN1VTYjhKWUc4TjZQOVErRklUZERaVElDdVYxWnFDVHFFNHNoRlNVSVl6c3V1T1BPOW9iSEtyeFJDSjNXUUlECkFRQUJvMUF3VGpBZEJnTlZIUTRFRmdRVXcvQ2ZDcENVQzlSVlQrRkRZOXl0OFJXQTNsOHdId1lEVlIwakJCZ3cKRm9BVXcvQ2ZDcENVQzlSVlQrRkRZOXl0OFJXQTNsOHdEQVlEVlIwVEJBVXdBd0VCL3pBTkJna3Foa2lHOXcwQgpBUXNGQUFPQ0FRRUFJcjJhdXVpWGxJek1UdTRwLzNsSThWNVBGYXNzdlF2c2dCRFZtN3RSRmwzcmFPbDJOWTN6Cm1SQ2hCK1FrenN2cDVBRkh3UXkzd3Qxb1B2b2JSeDZQWlk0bFFRRmtJU0FnekVLWnk2ejR2TGlJU1cyOWpBU0UKclNXVXRSZkx2Q3M3bHlkd2thM1poYm94cy91Znhudm5ONHJnZTdFR1B5Nm5WZWF3TGx2NjZwVmdQZUpGWS84UQoxaER6bmxwQWs4SHpWTktQdTFycC90RUVvbnIraHFpdUlWSGtOVmZCdWZtaXR5dVdVcEptbkVDUGdqRFBLWSthCkJXbFA3ZXgwWmJaUy95K0VJSTAvYjZsdTJ2dU1nSXFqMXp2VzRYZ1JlamExbk90bDUrZE91THhzdS8wMlZjRTIKSGlIdDZFRERHcVF0Wmh0OFYycWhETXovemptY3N1YnpBdz09Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K
+  tls.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2d0lCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktrd2dnU2xBZ0VBQW9JQkFRQ3dVRUY0eHNDRzdoL3MKKytzNzZQNkk2dnhzcnVnbWJLWDZ2UDNYbXhDTTNNV2tEa05NR3lpWEZzTlFFakRHbHUrUUFnMU5IZW1ZY3dobgpYeDF2MWR2d0x2QzNpNXRRMG9CellYeTFKVmF6S2lsRXdTRmRHOFpNcXlZT1BpVG1WNWtiZGpYOGh6OC9rNXBrCm4yRFlzVUhVUHRJZFBWTXliNDVjRmZCSUFCajZzRUtEemZyTkFEcjlJakZ4akVBOG52S0k5NG5BUURZVHVDeVUKN3B1TGxkTVljNFR2UVZvWW5YSGlGcDFEYjl4UFlva0FtYnJpdVBYOGJpM3c5SlNINnFUcVRqdG1GVkFzNitoVgpNNXAyTldlU1IvRXZ0Ukp2d2xnYnczby8xRDRVaE4wTmxNZ0s1WFZtb0pPb1RpeUVWSlFoak95NjQ0ODcyaHNjCnF2RkVJbmRaQWdNQkFBRUNnZ0VBVk5YcEN1SW5WVVZTMjBiRUEwbXkzOUtocnZIaUJrc1UramJodFZLSmZoM2sKZzNIUmM5ZEZpcDJMVVFYUHJsNkYycmNDQzI4dkxRbDhxN0NhaTJ0TnJwNEhlV21WVENoZFlpY3dTRUUxSEhSVwo4eHd5bjRoenZBUkdCV2hsZk9mOVpiZFZkckxrL2dSWnI3ejRib3VyN3lKakcycWNrNUlWMzcwMnBvNVZkcGwzCjdmNjlETEoyWVo4a0Q2TWJoYTUzYWpkeUorK1lQc2JBWEhTZ3p5ZmZVTG14K043ZlFLbndVUC84VEVNN1BZQnYKZzJIbFpYRGNpSnJoZDRVZDV6c1NtQUNnTUliZC9FbU9jbysxd2pnbE8zLzFrY1cyYVYrTlo2dTJMTENzV3BMQgpYbG1ML3czU2JDR2VOR3Jmc3NNZlliWjM4RTVTcEdocjQ0aHJKdzBxV1FLQmdRRG1FQ0ZvOUNtbjdmemxOdVJICnNhZlYzbFpqTTdWQ1ByWk1idkxpcUZPTmxLQ29TY2NsMVBRQUNNejdTSnFtcjNPLzFMTjEvVElCdkt1NE1sSEEKSXhDVE45cGdkODMwbllJeHcvQmxhRGZ0cFkvUnRYUG9GM0VHRFYvQmlpcUpMdUhkMVphR2FtTStBNUZ2QzRBegpoRmlZNHBibFNRTGtaVGt4NUk3a0dZMnJud0tCZ1FERU1Oc1ArZTZZZTBCMnd5VjhReisrczErN0hoSnhzYWNLCktKSzErN0J1bHBuZHgwSXYrMDE1T283RjhRZWsxcUxPcVM5SE1QblBsMnpIbHQ1R3BhQ1g4bzkwb2I5d0wvWnQKcmx0aGRqN0FVQUw3QXo5TDlqdk5DWTdwWmtLRCs1UlIxa1pjRGhjQzZVREdiTFFYUUZycUxMWm11dkNCby82awpQMFJ4TCtkNkJ3S0JnUUNGejMvL01YUkJEalQzaExQRjExak5GZUtkRkdncXZacitYZEc3YnpnWnN3YTJteUxQCnFFcTY4bU4zREVXWENabURTODJOcE5TL0dlT3U0T1dYb1UxMHN4bTYzalBXUVA2R3YzWkZKUmJTakdkWUMvZjgKV0JZTzlSeHF6MWZxTG5DRXZFUXVyaFpHN1lCYlhBOFc1N1U0UnlLSS9heEc5M0VLeWVzcVZJcUg5UUtCZ1FDSAowenNXS0haaTRwR1NwekFBZzU1U0xHVU9hcGRpVnhmS0ZLVGRrTTVwQWFLc3hCS3luVXpaclF6RFJVZUJlNGRqCmhBWFRSN2pyVzI1WUQ3NzdNaGVvbXFsdW1ieXJzc2pzemxVOWVGdWhVTU4vZkpRSnh3Tkh4R0pJZkI5NHVHZksKOEludG1XT2RCRmR3Q0RuMkR2dmlPK3BiM1BnOUNJaDJ0Y1p3aGpXL2FRS0JnUURYOWt4UHFFM2svOVRrTFVzVgppRXlXY2VjRGhFY2c2ZW9XMXdnd3NtUXcxNTg1b2pEeW9FQVE5NU11TTRYL215OCtlMi95WGg2V2w2Vmx5SiswCmhHRU1oWEp3U01ESThWajAySVNSUDFRTks2d0NYdFUrenZQUm5pWTI3emtQRForQ3Z4NVNTNU80MmVUSkVUNTgKZDYxSkM4ZUNoRzJsY2V4eVRYNHNxQzFGU3c9PQotLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tCg==
+kind: Secret
+metadata:
+  name: acme-air-tls-secret
+  namespace: acme-air-tls 
+type: kubernetes.io/tls
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: acme-web
+  namespace: acme-air-tls
+spec:
+  tls:
+  - hosts:
+    - acme-air-tls.mylab.com
+    secretName: acme-air-tls
+  rules:
+  - host: acme-air-tls.mylab.com
+    http:
+      paths:
+      - backend:
+          serviceName: acme-web
+          servicePort: 3000
