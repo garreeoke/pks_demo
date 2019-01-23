@@ -1,6 +1,6 @@
 # PKS_DEMO #
 
-Files used for a PKS Demo
+Files used for a PKS/Kubernetes Demo using acme-air.
 
 ## Acme-Air ##
 Acme-air is a nodejs/mongodb application.  It is a fake airline reservation system
