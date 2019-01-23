@@ -1,5 +1,5 @@
 # Following commands are commonly used, modify for your own usage
-pks login -a pks.mylab.com -u aaron -p vmware -k
+pks login -a pks.mylab.com -u pksadmin -p VMware1! -k
 pks create-cluster k8s-2 --external-hostname k8s-2 --plan small --num-nodes=2
 pks resize k8s-2 --num-nodes=3
 pks delete-cluster k8s-2
