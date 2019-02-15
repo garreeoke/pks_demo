@@ -93,7 +93,7 @@ spec:
         - name: METRIC_SOURCE_NAME
           # This can be changed to use the Deployment / Statefulset name instead as a simple value
           # The metric source name should not be an ephemeral value
-          value: planespotter-mongodb
+          value: acme-air-mongodb
         - name: POD_NAME
           valueFrom:
             fieldRef:
