@@ -259,7 +259,6 @@ spec:
   - name: http-port
     port: 3000
     protocol: TCP
-    targetPort: http-port
   selector:
     app: acme-web
   sessionAffinity: None

@@ -112,12 +112,11 @@ spec:
   sessionAffinity: None
   type: ClusterIP
 ---
-apiVersion: extensions/v1beta1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
     app: acme-web 
-    tier: frontend
   name: acme-web
   namespace: acme-air2
 spec:
@@ -134,7 +133,6 @@ spec:
     metadata:
       labels:
         app: acme-web
-        tier: frontend
     spec:
       affinity: {}
       containers:
@@ -205,7 +203,6 @@ kind: Service
 metadata:
   labels:
     app: acme-web
-    tier: frontend
   name: acme-web
   namespace: acme-air2
 spec:
@@ -213,7 +210,6 @@ spec:
   - name: http-port
     port: 3000
     protocol: TCP
-    targetPort: http-port
   selector:
     app: acme-web
   sessionAffinity: None
