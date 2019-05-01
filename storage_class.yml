@@ -1,7 +1,7 @@
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata: 
-  name: vsphere-default
+  name: pks-default
 provisioner: kubernetes.io/vsphere-volume
 parameters: 
   datastore: datastoreComp

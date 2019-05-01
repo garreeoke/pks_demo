@@ -136,7 +136,7 @@ spec:
       resources:
         requests:
           storage: 100Gi
-      storageClassName: vsphere-default
+      storageClassName: pks-default
 ---
 apiVersion: v1
 kind: Service
